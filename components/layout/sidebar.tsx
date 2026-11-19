@@ -1,6 +1,5 @@
 import { Brand } from "./brand";
 import {
-  CircleHelp,
   LayoutDashboard,
   Map,
   Settings,
@@ -55,19 +54,14 @@ export function Sidebar({
             className="nav-item unavailable"
             disabled
             key={label}
-            title="Available in a future phase"
+            title="Not available yet"
           >
             <Icon size={19} />
             {label}
-            <span className="soon">Soon</span>
           </button>
         ))}
       </nav>
       <div className="sidebar-bottom">
-        <div className="help-line">
-          <CircleHelp size={17} />
-          <span>Phase 3A · Workspace</span>
-        </div>
         <div className="profile">
           <span className="avatar">S</span>
           <div>

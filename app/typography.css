@@ -8,7 +8,7 @@
   --text-body: clamp(1rem, 0.975rem + 0.1vw, 1.0625rem);
   --text-lead: clamp(1.0625rem, 1.025rem + 0.15vw, 1.125rem);
   --text-section: clamp(2rem, 1.5rem + 1.8vw, 3rem);
-  --text-hero: clamp(3rem, 1.6rem + 3.2vw, 4.75rem);
+  --text-hero: clamp(2.625rem, 1.4rem + 2.8vw, 4.15625rem); /* Hero only: 12.5% smaller. */
   --leading-body: 1.6;
   --leading-heading: 1.18;
   --tracking-heading: -0.025em;
@@ -199,6 +199,29 @@ body .landing .preview-map-caption { max-width: calc(100% - 26px); }
 body .landing .preview-location { max-width: calc(100% - 26px); left: 13px; white-space: normal; }
 body .landing .preview-location svg, body .landing .preview-row > svg { flex-shrink: 0; }
 body .landing .scene-request > strong { font-size: clamp(1rem, .95rem + .2vw, 1.125rem); }
+
+/* Compact workspace hierarchy; body and input sizes stay unchanged. */
+.app-shell .page-heading { margin-bottom: 22px; }
+.app-shell .page-heading h1 { font-size: clamp(1.5rem, 1.35rem + .75vw, 1.875rem); margin-top: 0; }
+.app-shell .workflow-card h2 { font-size: clamp(1.25rem, 1.15rem + .3vw, 1.375rem); }
+.page-heading-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; max-width: 100%; }
+.draft-import-dialog h2 { font-size: clamp(1.25rem, 1.15rem + .3vw, 1.5rem); }
+.draft-import-dialog :is(p, li, label) { font-size: var(--text-secondary); line-height: var(--leading-body); }
+.draft-import-dialog .import-notices { padding-left: 22px; display: grid; gap: 10px; }
+.draft-import-dialog .import-confirmation { display: flex; flex-direction: row; align-items: flex-start; gap: 12px; margin-top: 24px; }
+.draft-import-dialog input[type="checkbox"] { width: 20px; height: 20px; flex-shrink: 0; padding: 0; margin-top: 2px; accent-color: var(--green); }
+.draft-import-dialog .import-feedback { overflow-wrap: anywhere; }
+.draft-import-dialog .import-feedback:empty { display: none; }
+.draft-import-dialog :is(button, input):focus-visible, .plan-details summary:focus-visible { outline: 3px solid var(--green); outline-offset: 3px; }
+.plan-details { margin-top: 18px; font-size: var(--text-secondary); }
+.plan-details summary { cursor: pointer; color: var(--green); padding-block: 10px; }
+@media (max-width: 640px) {
+  .page-heading-actions { width: 100%; }
+  .page-heading-actions > :is(.button, button) { flex: 1 1 140px; }
+  .draft-import-dialog { padding: 22px; }
+  .draft-import-dialog .modal-actions { flex-wrap: wrap; }
+  .draft-import-dialog .modal-actions > button { flex: 1 1 120px; }
+}
 @media (max-width: 640px) {
   body .landing .scene-stages { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   body .landing .scene-stages li, body .landing .scene-topline,

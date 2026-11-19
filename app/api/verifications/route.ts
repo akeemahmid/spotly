@@ -4,6 +4,7 @@ import { storedDraftSchema, validateNewVerification } from "../../../lib/validat
 import { z } from "zod";
 import { planRequest, planRequestSchema, requestFingerprint } from "../../../lib/plan-request";
 import { hasSameOrigin } from "../../../lib/request-origin";
+import { countAssignments, type AssignmentCounts } from "../../../lib/verifier/models";
 const reply=(body:unknown,status=200)=>Response.json(body,{status,headers:{"Cache-Control":"private, no-store"}});
 export async function GET() {
  let access;
@@ -14,7 +15,12 @@ export async function GET() {
   if(setup) return reply({error:"Workspace setup failed. Check database migrations and membership."},503);
   const {data,error}=await client.from("verification_requests").select("*, verification_plans(*)").order("created_at",{ascending:false});
   if(error) return reply({error:"Requests could not be loaded. Check the database configuration and retry."},503);
-  return reply({tasks:data.map((row)=>databaseDraft(row,userId))});
+  let activity: AssignmentCounts | null = null;
+  try {
+   const { data: assignments, error: activityError } = await client.from("task_assignments").select("status").eq("assigned_by",userId);
+   if (!activityError) activity = countAssignments(assignments);
+  } catch { /* Drafts remain readable if field-activity configuration is unavailable. */ }
+  return reply({tasks:data.map((row)=>databaseDraft(row,userId)),activity});
  } catch { return reply({error:"Stored requests could not be validated or loaded. Check database data and retry."},503); }
 }
 export async function POST(request:Request) {

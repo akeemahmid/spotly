@@ -46,3 +46,18 @@ export const assignmentSchema = z.object({
   ),
 });
 export type Assignment = z.infer<typeof assignmentSchema>;
+
+export const assignmentCountsSchema = z.object({
+  active: z.number().int().nonnegative(),
+  awaitingReview: z.number().int().nonnegative(),
+  completed: z.number().int().nonnegative(),
+});
+export type AssignmentCounts = z.infer<typeof assignmentCountsSchema>;
+export function countAssignments(rows: unknown): AssignmentCounts {
+  const assignments = z.array(z.object({ status: assignmentStatusSchema })).parse(rows);
+  return {
+    active: assignments.filter(({ status }) => status !== "declined" && status !== "completed").length,
+    awaitingReview: assignments.filter(({ status }) => status === "submitted").length,
+    completed: assignments.filter(({ status }) => status === "completed").length,
+  };
+}

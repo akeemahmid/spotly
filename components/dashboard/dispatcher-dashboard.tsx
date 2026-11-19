@@ -40,7 +40,7 @@ export function DispatcherDashboard({ view = "Overview" }: { view?: string }) {
       { scroll: false },
     );
   }
-  const { tasks: requests, ready, issue, retry } = useVerifications();
+  const { tasks: requests, activity, ready, issue, retry } = useVerifications();
   const [filter, setFilter] = useState("All requests");
   const [selectedSample, setSelectedSample] = useState<number | null>(null);
   const [search, setSearch] = useState("");
@@ -50,23 +50,23 @@ export function DispatcherDashboard({ view = "Overview" }: { view?: string }) {
   const stats = [
     {
       label: "Active verifications",
-      value: String(counts.active).padStart(2, "0"),
+      value: activity ? String(activity.active).padStart(2, "0") : "—",
       icon: Activity,
-      caption: "Drafts are not active field work",
+      caption: "Open tasks you assigned; excludes drafts",
       tone: "green",
     },
     {
       label: "Awaiting review",
-      value: String(counts.awaitingReview).padStart(2, "0"),
+      value: activity ? String(activity.awaitingReview).padStart(2, "0") : "—",
       icon: FileCheck2,
-      caption: "Ready for your attention",
+      caption: "Submitted tasks you assigned",
       tone: "amber",
     },
     {
       label: "Completed",
-      value: String(counts.completed).padStart(2, "0"),
+      value: activity ? String(activity.completed).padStart(2, "0") : "—",
       icon: CheckCheck,
-      caption: "Verified workspace completions",
+      caption: "Completed tasks you assigned",
       tone: "green",
     },
     {
@@ -106,7 +106,7 @@ export function DispatcherDashboard({ view = "Overview" }: { view?: string }) {
                 <div className="notification-panel">
                   <strong>You’re up to date</strong>
                   <p>
-                    No live notifications are connected in this phase.
+                    Notifications are not available yet.
                   </p>
                 </div>
               )}
@@ -117,54 +117,30 @@ export function DispatcherDashboard({ view = "Overview" }: { view?: string }) {
         <main id="main">
           <div className="page-heading">
             <div>
-              <div className="eyebrow">
-                <span /> YOUR OPERATIONS, IN VIEW
-              </div>
               <h1>
                 {view === "Overview"
                   ? "Operations overview"
                   : view === "Map"
                     ? "Location overview"
-                    : "Your verifications."}
+                    : "Your verifications"}
               </h1>
-              <p>
-                Know what’s happening on the ground. Make your next move with
-                confidence.
-              </p>
             </div>
+            <div className="page-heading-actions">
             <Link
               className="button primary"
               href="/dispatcher/verifications/new"
             >
               <Plus size={18} /> New verification
             </Link>
-          </div>
-          <ImportLocalDrafts />
-          <div className="demo-banner">
-            <span>
-              <ShieldCheck size={16} />
-              <strong>Dispatcher workspace</strong>
-              <span>
-                {" "}
-                Your workspace requests are saved to Supabase. Drafts are not
-                assigned.
-              </span>
-            </span>
-            <span className="phase-tag">PHASE 3A</span>
+            <ImportLocalDrafts />
+            </div>
           </div>
           <StorageNotice issue={issue} retry={retry} />
+          {ready && !issue && !activity && <p role="status">Assignment counts are unavailable. Refresh or open a request to check its status.</p>}
           {!ready && (
             <p role="status" className="workspace-loading">
               Loading workspace requests…
             </p>
-          )}
-          {ready && counts.drafts > 0 && (
-            <div className="draft-count-note">
-              <span className="local-data-tag">
-                {counts.drafts} saved {counts.drafts === 1 ? "draft" : "drafts"}
-              </span>
-              Not included in active verifications, completed work, or spending.
-            </div>
           )}
           {view === "Overview" && (
             <section className="stats-grid" aria-label="Verification overview">
@@ -205,7 +181,6 @@ export function DispatcherDashboard({ view = "Overview" }: { view?: string }) {
                   <br />
                   to resolution.
                 </h2>
-                <p>The intended journey for every ground check.</p>
                 <ol>
                   <li>
                     <span>1</span>
@@ -231,9 +206,7 @@ export function DispatcherDashboard({ view = "Overview" }: { view?: string }) {
                 </ol>
                 <div className="workflow-note">
                   <ArrowDownLeft size={16} />
-                  The workflow above is a preview.
-                  <br />
-                  Live verification is coming later.
+                  Field work requires approval. Payments are unavailable.
                 </div>
               </section>
             </div>
@@ -252,6 +225,7 @@ export function DispatcherDashboard({ view = "Overview" }: { view?: string }) {
                   </h2>
                   <span className="count-badge">{requests.length}</span>
                   <span className="data-label">Workspace requests</span>
+                  {ready && counts.drafts > 0 && <span className="data-label">{counts.drafts} saved {counts.drafts === 1 ? "draft" : "drafts"} · excluded from activity counts</span>}
                 </div>
                 {view === "Overview" && (
                   <button
@@ -395,10 +369,6 @@ export function DispatcherDashboard({ view = "Overview" }: { view?: string }) {
             <span className="footer-brand">
               <MapPin size={15} /> Spotly{" "}
               <span>Know what’s happening, anywhere.</span>
-            </span>
-            <span>
-              Built for SERV Hackathon 02 <span className="footer-dot">·</span>{" "}
-              Phase 3A
             </span>
           </footer>
         </main>

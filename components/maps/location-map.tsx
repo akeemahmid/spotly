@@ -207,7 +207,7 @@ export function LocationMap({
         </button>
       )}
       <div className="map-policy">
-        <span>OpenStreetMap tiles · prototype use</span>
+        <span>Map preview · OpenStreetMap</span>
         <a
           href="https://www.openstreetmap.org/fixthemap"
           target="_blank"

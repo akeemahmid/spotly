@@ -114,9 +114,8 @@ export default function Home() {
               <span>anywhere.</span>
             </h1>
             <p>
-              Spotly lets businesses request fresh, location-specific observations
-              from approved field verifiers. Ask a question, review the evidence,
-              and make your next move with better context.
+              Request fresh observations from approved field verifiers.
+              Review the evidence and decide your next move.
             </p>
             <div className="hero-actions">
               <Link href="/dispatcher" className="button primary">
@@ -130,7 +129,7 @@ export default function Home() {
               <span>
                 <Check size={14} /> Email sign-in for your workspace
               </span>
-              <span>Phase 3A · Persistent requests</span>
+              <span>Requests saved to your workspace</span>
             </div>
           </div>
           <SpotlyHeroScene />
@@ -166,9 +165,8 @@ export default function Home() {
                 happening there right now.
               </p>
               <p>
-                When a decision depends on road conditions, route access, site
-                accessibility, or a field check, fresh information from the ground
-                can make all the difference.
+                Check road conditions, route access, and site conditions with
+                fresh observations from the ground.
               </p>
               <div className="problem-tags">
                 <span>Road conditions</span>
@@ -188,11 +186,6 @@ export default function Home() {
                 </span>
                 <h2>From uncertainty to your next move.</h2>
               </div>
-              <p>
-                One considered workflow.
-                <br />
-                Every step in your control.
-              </p>
             </div>
             <LandingReveal stagger>
               <ol className="steps-grid">
@@ -210,9 +203,8 @@ export default function Home() {
             </LandingReveal>
             <p className="scope-note">
               <ShieldCheck size={15} />
-              The intended Spotly workflow. The current prototype supports saved requests and observation
-              planning; field verification, evidence
-              review, and payouts are not connected.
+              Field work is available only to approved accounts when enabled.
+              Payments are unavailable.
             </p>
           </div>
         </section>
@@ -261,21 +253,18 @@ export default function Home() {
             <div className="product-heading">
               <span className="section-kicker">THE DISPATCHER WORKSPACE</span>
               <h2>
-                A wider view.
-                <br />A more confident next move.
+                Your ground checks, together.
               </h2>
               <p>
-                Your requests, locations, and verification status — together in
-                one calm, focused workspace.
+                Keep requests, locations, and review status in one place.
               </p>
               <Link href="/dispatcher" className="text-button">
-                Explore the demo <ArrowRight size={17} />
+                Open workspace <ArrowRight size={17} />
               </Link>
             </div>
             <LandingReveal className="product-preview-entrance"><WorkspacePreview /></LandingReveal>
             <p className="preview-caption">
-              A preview of the dispatcher workspace. All requests, statuses, and
-              locations shown are demo data.
+              Illustrative workspace. Requests, statuses, and locations shown are sample data.
             </p>
           </div>
         </section>
@@ -303,9 +292,6 @@ export default function Home() {
         <div className="landing-container">
           <Brand />
           <p>Know what’s happening, anywhere.</p>
-          <span>
-            SERV Hackathon 02 <span> / </span> Phase 3A prototype
-          </span>
         </div>
       </footer>
     </div>

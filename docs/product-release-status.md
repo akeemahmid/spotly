@@ -1,5 +1,7 @@
 # Product recovery and release checkpoint · November 18, 2026
 
+Current functional readiness and the exact browser checklist are recorded in [core workflow acceptance](core-workflow-acceptance.md), following [the first complete workflow audit](first-complete-workflow-audit.md). The owner has submitted the Storage support request. Product work continues independently; historical cleanup notes and the remote-ref observation below are not a fresh state inspection. The earlier audit confirmed remote `main` matched local base `3a0c63f` and recorded the application fixes without committing or pushing. No genuine end-to-end workflow is claimed.
+
 This checkpoint supersedes older status, deployment and pilot-activation instructions. No production writes, gate activation, migration, new SERV generation, photographic submission or payment was performed during this request.
 
 ## Cleanup
@@ -26,7 +28,7 @@ The runner prompts for the fixed disposable Session pooler and hidden password, 
 
 Owner-supplied failed GET correlation data is in ignored local `.spotly-security-download-query.sql` (mode 0600); its approximate time comes from UUIDv7 and is not log-verified. Use it only in the disposable project's Logs Explorer. No browser session is connected, the installed CLI exposes no hosted-log command, and the available Supabase integration is not yet installed/connected. Therefore no private hosted log correlation has been completed. Installing/connecting Supabase can unblock that read-only investigation.
 
-The application and installed SDK use the expected authenticated request. Independent SQL permits C, but the service returns HTTP 400 / NoSuchKey / not_found. Root cause remains unconfirmed. [The minimal diagnostic and private support ticket draft](storage-download-support.md) distinguish service catalog/RLS context, backing bytes, locator/version and other service failures using the existing request. The ticket is prepared, not submitted. No workaround, policy relaxation, bucket change, privileged application client or extra fixture upload was added.
+The application and installed SDK use the expected authenticated request. Independent SQL permits C, but the service returns HTTP 400 / NoSuchKey / not_found. Root cause remains unconfirmed. [The diagnostic record](storage-download-support.md) documents the existing request and technical questions. The owner confirms the support ticket has been submitted. No workaround, policy relaxation, bucket change, privileged application client or extra fixture upload was added.
 
 The implemented A request → genuine signed SERV plan → acceptance → approved C assignment → C acceptance → normalized photo/observation → A review → assignment completion workflow is **not verified live end to end**. The existing genuine plan must be reused. The security runner's synthetic plan/image is a test fixture, never a genuine provider response or field observation. Both gates must remain closed until required signing, dedicated-account, Storage and browser checks pass. With the current production-write prohibition, the existing production-bound plan cannot be executed by this request.
 

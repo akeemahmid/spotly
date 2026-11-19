@@ -9,8 +9,8 @@ export function MapPreview({
     <section className="card map-card" aria-labelledby="map-title">
       <div className="card-heading">
         <div>
-          <h2 id="map-title">Verification coverage</h2>
-          <p>Explore sample requests across the Lagos region.</p>
+          <h2 id="map-title">Sample locations</h2>
+          <p>Illustrative requests in the Lagos region.</p>
         </div>
         <span className="subtle-tag">
           <span /> Lagos region
@@ -56,7 +56,6 @@ export function MapPreview({
         <span>
           <span className="legend-dot" /> 3 illustrative markers
         </span>
-        <span>Ground-level context. City-wide confidence.</span>
       </div>
     </section>
   );

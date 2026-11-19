@@ -3,11 +3,13 @@ import { hasSameOrigin } from "../../../lib/request-origin";
 import {
   assignSchema,
   assignmentActionSchema,
+  EVIDENCE_BUCKET,
 } from "../../../lib/verifier/validation";
 import { assignmentSchema } from "../../../lib/verifier/models";
 import { reply, boundedBody } from "../../../lib/verifier/http";
-import { requireWorkflow, workflowBlockReason } from "../../../lib/verifier/server";
+import { photoHash, requireWorkflow, workflowBlockReason } from "../../../lib/verifier/server";
 import { planRequestSchema } from "../../../lib/plan-request";
+import { z } from "zod";
 export async function GET(request: Request) {
   let access;
   try {
@@ -113,6 +115,8 @@ export async function POST(request: Request) {
       503,
     );
   }
+  let executing = false;
+  let checkingEvidence = false;
   try {
     const body = JSON.parse(
       (await boundedBody(request, 12000)).toString("utf8"),
@@ -120,6 +124,7 @@ export async function POST(request: Request) {
     const { client } = access;
     if (body.action === "assign") {
       const input = assignSchema.parse(body);
+      executing = true;
       const { data, error } = await client.rpc("assign_verification", {
         request_id: input.requestId,
         selected_plan: input.planId,
@@ -136,6 +141,46 @@ export async function POST(request: Request) {
         : reply({ id: data });
     }
     const input = assignmentActionSchema.parse(body);
+    if (input.action === "approve" || input.action === "complete") {
+      checkingEvidence = true;
+      // The browser's loaded-image guard is usability only. Verify dispatcher
+      // access BEFORE reading bytes, then recheck the actual finalized object.
+      // The RPC still repeats role/plan/expiry/state checks under its row locks.
+      const { data: assignment, error: assignmentError } = await client
+        .from("task_assignments")
+        .select("submission_round,verification_requests!verification_request_id(workspace_id)")
+        .eq("id", input.id)
+        .maybeSingle();
+      if (assignmentError) return reply({ error: "Review is unavailable. Refresh and retry." }, 503);
+      if (!assignment) return reply({ error: "Assignment unavailable." }, 404);
+      const target = z.object({ submission_round: z.number().int(), verification_requests: z.object({ workspace_id: z.uuid() }) }).safeParse(assignment);
+      if (!target.success) return reply({ error: "Assignment could not be validated for review." }, 503);
+      const { data: membership, error: membershipError } = await client
+        .from("workspace_members")
+        .select("role")
+        .eq("workspace_id", target.data.verification_requests.workspace_id)
+        .eq("user_id", access.userId)
+        .maybeSingle();
+      if (membershipError) return reply({ error: "Review access could not be checked. Refresh and retry." }, 503);
+      if (membership?.role !== "dispatcher") return reply({ error: "Dispatcher review access required." }, 403);
+      const { data: evidence, error: evidenceError } = await client
+        .from("task_evidence")
+        .select("file_path,byte_size,sha256,submitted_at,submission_round")
+        .eq("id", input.evidenceId!)
+        .eq("assignment_id", input.id)
+        .not("submitted_at", "is", null)
+        .maybeSingle();
+      if (evidenceError) return reply({ error: "Evidence could not be checked. Refresh and retry." }, 503);
+      if (!evidence?.submitted_at || evidence.submission_round !== target.data.submission_round)
+        return reply({ error: "Select the current submitted evidence before reviewing." }, 409);
+      const { data: photo, error: readError } = await client.storage.from(EVIDENCE_BUCKET).download(evidence.file_path);
+      if (readError || !photo)
+        return reply({ error: "The private photograph could not be read. No review or completion was recorded by this attempt. Reload the photograph before retrying." }, 503);
+      const bytes = new Uint8Array(await photo.arrayBuffer());
+      if (bytes.length !== evidence.byte_size || photoHash(bytes) !== evidence.sha256)
+        return reply({ error: "Evidence integrity check failed. No review or completion was recorded by this attempt. Contact your administrator." }, 409);
+    }
+    executing = true;
     const { error } = await client.rpc("transition_assignment", {
       assignment: input.id,
       operation: input.action,
@@ -152,6 +197,10 @@ export async function POST(request: Request) {
         )
       : reply({ ok: true });
   } catch {
+    if (executing)
+      return reply({ error: "The action status could not be confirmed. Refresh the assignment before retrying the same action." }, 503);
+    if (checkingEvidence)
+      return reply({ error: "The photograph could not be verified. No review or completion was recorded by this attempt. Reload the photograph before retrying." }, 503);
     return reply(
       {
         error: "Invalid action or request fields. Your form has been retained.",

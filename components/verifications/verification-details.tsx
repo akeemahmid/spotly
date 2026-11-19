@@ -29,7 +29,7 @@ export function VerificationDetails({ id }: { id: string }) {
           Loading saved request…
         </section>
       ) : issue && !task ? (
-        <section className="card form-card"><h1>Request unavailable</h1><p>Loading failed. Retry before treating this request as missing.</p></section>
+        <section className="card form-card"><h1>Request unavailable</h1><p>We couldn’t load this request. Please retry.</p></section>
       ) : !task ? (
         <section className="card empty-state">
           <MapPin size={28} />
@@ -66,13 +66,13 @@ export function VerificationDetails({ id }: { id: string }) {
             <div>
               <strong>
                 {task.source !== "sample"
-                  ? "Saved request — field workflow tracked below."
-                  : "Sample request — illustrative data only."}
+                  ? "Saved request"
+                  : "Illustrative sample"}
               </strong>
               <p>
                 {task.source !== "sample"
-                  ? "This request and its approved maximum budget remain immutable. See assignment and review records below for recorded field activity. No payment is executed."
-                  : "This is an example of the intended workflow, not a real verification or payment record."}
+                  ? "Request details and the approved budget stay fixed. Assignment status is tracked below. No payments are made."
+                  : "Sample data only, with no real verification or payment activity."}
               </p>
             </div>
             <StatusBadge status={task.status} />
@@ -80,7 +80,7 @@ export function VerificationDetails({ id }: { id: string }) {
           <div className="creation-grid detail-grid">
             <div className="detail-main">
               {task.source !== "sample" && <ServPlan key={task.id} task={task} storageIssue={issue} />}
-              {task.source === "supabase" && <DispatcherAssignment requestId={task.id} />}
+              {task.source === "supabase" && <DispatcherAssignment key={task.id} requestId={task.id} />}
               <section className="card form-card">
                 <div className="form-section-heading">
                   <span className="form-section-icon">
@@ -88,11 +88,6 @@ export function VerificationDetails({ id }: { id: string }) {
                   </span>
                   <div>
                     <h2>Request information</h2>
-                    <p>
-                      {task.source !== "sample"
-                        ? "Dispatcher-defined requirements and limits."
-                        : "Representative road-condition request."}
-                    </p>
                   </div>
                 </div>
                 <div className="detail-question">
@@ -146,15 +141,14 @@ export function VerificationDetails({ id }: { id: string }) {
                     <dt>Storage</dt>
                     <dd>
                       {task.source !== "sample"
-                        ? "Supabase workspace"
+                        ? "Workspace"
                         : "Bundled sample data"}
                     </dd>
                   </div>
                 </dl>
                 <p className="field-hint">
-                  Dates use your device’s local timezone. A budget is a ceiling,
-                  not a charge, reservation, or payment authorization to an
-                  agent.
+                  Dates use your local timezone. The budget is a maximum;
+                  no funds are charged or reserved.
                 </p>
               </section>
               <section className="card form-card">
@@ -164,9 +158,6 @@ export function VerificationDetails({ id }: { id: string }) {
                   </span>
                   <div>
                     <h2>Required evidence</h2>
-                    <p>
-                      Dispatcher requirements. Submission status is recorded in assignment and review.
-                    </p>
                   </div>
                 </div>
                 {task.source !== "sample" ? (
@@ -192,7 +183,6 @@ export function VerificationDetails({ id }: { id: string }) {
                   </span>
                   <div>
                     <h2>Activity timeline</h2>
-                    <p>Only recorded activity appears here.</p>
                   </div>
                 </div>
                 <ol className="activity-timeline">
@@ -215,12 +205,12 @@ export function VerificationDetails({ id }: { id: string }) {
                       </time>
                       <p>
                         {task.source !== "sample"
-                          ? "The dispatcher set the requirements and approved the maximum budget. Assignment history is recorded separately."
+                        ? "Requirements and maximum budget saved."
                           : "No verifier activity, reports, or payment records are connected to this example."}
                       </p>
                     </div>
                   </li>
-                  {task.source !== "sample" && task.acceptedPlan && <li><span className="timeline-dot" /><div><strong>Observation plan accepted</strong><time dateTime={task.acceptedPlan.acceptedAt}>{formatTimestamp(task.acceptedPlan.acceptedAt)}</time><p>Planning instructions saved. No assignment or spending was authorized.</p></div></li>}
+                    {task.source !== "sample" && task.acceptedPlan && <li><span className="timeline-dot" /><div><strong>Observation plan accepted</strong><time dateTime={task.acceptedPlan.acceptedAt}>{formatTimestamp(task.acceptedPlan.acceptedAt)}</time><p>Plan accepted. Assignment is a separate step.</p></div></li>}
                 </ol>
               </section>
             </div>
@@ -231,7 +221,7 @@ export function VerificationDetails({ id }: { id: string }) {
                     <h2>Selected location</h2>
                     <p>
                       {task.source !== "sample"
-                        ? "Saved coordinates, without address inference."
+                        ? "Saved coordinates."
                         : "Exact coordinates were not provided."}
                     </p>
                   </div>
@@ -258,7 +248,8 @@ export function VerificationDetails({ id }: { id: string }) {
                 <div>
                   <h3>What happens next?</h3>
                   <p>
-                    Use the assignment and review section to track authorized field work. Assignments stay disabled until signing and live authorization checks pass. Payments remain unavailable.
+                    Assign an approved verifier when field work is enabled,
+                    then review their evidence. Payments are unavailable.
                   </p>
                 </div>
               </div>

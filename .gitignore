@@ -49,3 +49,5 @@ next-env.d.ts
 *.key
 *.p12
 *.pfx
+# Owner-requested local support attachment; never include in a release.
+/docs/spotly-storage-support-attachment.txt

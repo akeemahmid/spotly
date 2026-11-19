@@ -156,16 +156,14 @@ export function CreateVerification() {
     <VerificationShell label="New verification">
       <div className="page-heading">
         <div>
-          <span className="eyebrow">A FRESH QUESTION. A SPECIFIC PLACE.</span>
           <h1>New verification</h1>
           <p>
-            Define a ground check, select a location, and set the budget you
-            approve.
+            Set the question, location, evidence, and maximum budget.
           </p>
         </div>
         <span className="local-data-tag">
           <ShieldCheck size={14} />
-          Saved to your workspace
+          New draft
         </span>
       </div>
       <StorageNotice issue={store.issue} retry={store.retry} />
@@ -562,16 +560,6 @@ export function CreateVerification() {
                 </div>
               </dl>
             </section>
-            <div className="draft-note">
-              <ShieldCheck size={20} />
-              <div>
-                <h3>Local prototype</h3>
-                <p>
-                  Drafts are saved to your workspace. The map uses public OpenStreetMap
-                  tiles for development, not a production hosting service.
-                </p>
-              </div>
-            </div>
           </aside>
         </form>
       )}

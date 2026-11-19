@@ -42,6 +42,7 @@ export async function POST(request: Request) {
       429,
     );
   inFlight++;
+  let stage = "validation";
   try {
     const raw = await boundedBody(request, MAX_EVIDENCE_BYTES + 24000);
     const form = await new Response(raw, {
@@ -55,6 +56,7 @@ export async function POST(request: Request) {
       return reply({ error: "Choose a photograph." }, 400);
     const mime = imageTypeSchema.parse(file.type);
     const { client, userId } = access;
+    stage = "assignment";
     // Authorize before decoding attacker-controlled images or contacting Storage.
     const { data: a, error: assignmentError } = await client
       .from("task_assignments")
@@ -64,10 +66,12 @@ export async function POST(request: Request) {
       .maybeSingle();
     if (assignmentError || !a)
       return reply({ error: "Assignment unavailable." }, 403);
+    stage = "validation";
     const photo = await normalizePhoto(
       new Uint8Array(await file.arrayBuffer()),
       mime,
     );
+    stage = "reservation";
     const { data: path, error: reservationError } = await client.rpc(
       "reserve_task_evidence",
       {
@@ -88,6 +92,7 @@ export async function POST(request: Request) {
         409,
       );
     const bucket = client.storage.from(EVIDENCE_BUCKET);
+    stage = "storage";
     // No upsert: even a racing direct client cannot replace a submitted image.
     const { error: uploadError } = await bucket.upload(path, photo, {
       contentType: mime,
@@ -99,7 +104,7 @@ export async function POST(request: Request) {
       return reply(
         {
           error:
-            "Private upload could not be confirmed. Keep the form and retry.",
+            "Private photo upload could not be verified because Storage readback failed. This attempt did not finalize evidence for review. Keep this form and retry with the same photo, observation, and consent fields.",
         },
         503,
       );
@@ -113,7 +118,7 @@ export async function POST(request: Request) {
         409,
       );
     if (uploadError && !["409", "400"].includes(String(uploadError.statusCode)))
-      return reply({ error: "Upload failed. Keep the form and retry." }, 503);
+      return reply({ error: "Private photo upload failed. This attempt did not finalize evidence for review. Keep this form and retry with the same submission." }, 503);
     const receipt = evidenceReceipt({
       ...input,
       userId,
@@ -122,6 +127,7 @@ export async function POST(request: Request) {
       size: bytes.length,
       sha256: photoHash(bytes),
     });
+    stage = "finalization";
     const { error: submissionError } = await client.rpc(
       "submit_task_evidence",
       receipt,
@@ -130,12 +136,16 @@ export async function POST(request: Request) {
       ? reply(
           {
             error:
-              "The photo is stored privately but submission was not finalized. Keep this form and retry; do not create another submission.",
+              "The photo was verified privately but submission could not be confirmed. Refresh the task before retrying the same submission; do not create another submission.",
           },
           409,
         )
       : reply({ ok: true, id: input.id });
   } catch {
+    if (stage !== "validation")
+      return reply({ error: stage === "finalization"
+        ? "Submission status could not be confirmed. Refresh the task before retrying the same submission."
+        : "The evidence service could not complete the upload checks. This attempt did not finalize evidence for review. Keep this form and retry with the same photo, observation, and consent fields." }, 503);
     return reply(
       {
         error:

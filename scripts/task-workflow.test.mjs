@@ -267,6 +267,79 @@ test("database store refreshes after successful writes and preserves failures", 
   assert.equal(verificationStore.getSnapshot().tasks.length,0);
  }finally{unsubscribe();globalThis.fetch=oldFetch;globalThis.window=oldWindow;}
 });
+test("a late response from an unmounted account cannot replace the next subscription's records", async () => {
+ const oldFetch = globalThis.fetch, oldWindow = globalThis.window;
+ globalThis.window = new EventTarget();
+ let releaseOld; let count = 0; let firstSignal;
+ globalThis.fetch = async (_url, options) => {
+  if (++count === 1) {
+   firstSignal = options.signal;
+   return new Promise(resolve => { releaseOld = () => resolve(Response.json({ tasks: [{ id: "old-account" }] })); });
+  }
+  return Response.json({ tasks: [{ id: "current-account" }] });
+ };
+ let unsubscribe;
+ try {
+  unsubscribe = verificationStore.subscribe(() => {});
+  const old = verificationStore.refresh();
+  unsubscribe();
+  assert.equal(firstSignal.aborted, true);
+  unsubscribe = verificationStore.subscribe(() => {});
+  await verificationStore.refresh();
+  releaseOld(); await old; // Even a transport that ignores abort cannot publish.
+  assert.equal(verificationStore.getSnapshot().tasks[0].id, "current-account");
+ } finally { unsubscribe?.(); globalThis.fetch = oldFetch; globalThis.window = oldWindow; }
+});
+test("post-mutation refresh does not reuse a pre-mutation in-flight read", async () => {
+ const oldFetch = globalThis.fetch, oldWindow = globalThis.window;
+ globalThis.window = new EventTarget();
+ let releaseOld; let reads = 0;
+ globalThis.fetch = async (_url, options) => {
+  if (options.method === "POST") return Response.json({ id: "created-request" });
+  if (++reads === 1) return new Promise(resolve => { releaseOld = () => resolve(Response.json({ tasks: [] })); });
+  return Response.json({ tasks: [{ id: "created-request" }] });
+ };
+ let unsubscribe;
+ try {
+  unsubscribe = verificationStore.subscribe(() => {});
+  const old = verificationStore.refresh();
+  await verificationStore.create(valid());
+  assert.equal(reads, 2);
+  assert.equal(verificationStore.getSnapshot().tasks[0].id, "created-request");
+  releaseOld(); await old;
+  assert.equal(verificationStore.getSnapshot().tasks[0].id, "created-request");
+ } finally { unsubscribe?.(); globalThis.fetch = oldFetch; globalThis.window = oldWindow; }
+});
+test("dispatcher activity counts persisted assignments separately from immutable drafts and fails unavailable rather than zero", async () => {
+ const route = load("../app/api/verifications/route.ts");
+ const { countAssignments } = load("../lib/verifier/models.ts");
+ const previous = authModule.authenticatedClient;
+ const actor = randomUUID(); let unavailable = false;
+ const statuses = ["offered", "accepted", "submitted", "revision_requested", "approved", "completed", "declined"];
+ const client = {
+  rpc: async name => { assert.equal(name, "ensure_dispatcher_workspace"); return { error: null }; },
+  from(table) {
+   if (table === "verification_requests") return { select: () => ({ order: async () => ({ data: [], error: null }) }) };
+   assert.equal(table, "task_assignments");
+   return { select: columns => {
+    assert.equal(columns, "status");
+    return { eq: async (column, value) => {
+     assert.equal(column, "assigned_by"); assert.equal(value, actor);
+     return unavailable ? { error: {} } : { data: statuses.map(status => ({ status })), error: null };
+    } };
+   } };
+  },
+ };
+ try {
+  authModule.authenticatedClient = async () => ({ client, userId: actor });
+  const result = await route.GET();
+  assert.match(result.headers.get("Cache-Control"), /private, no-store/);
+  assert.deepEqual(await result.json(), { tasks: [], activity: { active: 5, awaitingReview: 1, completed: 1 } });
+  unavailable = true;
+  assert.deepEqual(await (await route.GET()).json(), { tasks: [], activity: null });
+  assert.throws(() => countAssignments([{ status: "draft" }]));
+ } finally { authModule.authenticatedClient = previous; }
+});
 const { planSchema, generatedPlanSchema } = load("../lib/validation/plan.ts");
 const { planRequest, planRequestSchema, requestFingerprint, isPlanStale } = load("../lib/plan-request.ts");
 const { acceptStoredPlan } = load("../lib/task-storage.ts");

@@ -22,6 +22,9 @@ type Result = {
   verifiers: { user_id: string }[];
   plans: { id: string }[];
 };
+class AssignmentLoadError extends Error {
+  constructor(message: string, readonly status: number) { super(message); }
+}
 async function loadAssignments(
   requestId?: string,
   signal?: AbortSignal,
@@ -31,7 +34,7 @@ async function loadAssignments(
     { cache: "no-store", signal },
   );
   const value = await response.json();
-  if (!response.ok) throw new Error(value.error ?? "Assignments unavailable.");
+  if (!response.ok) throw new AssignmentLoadError(value.error ?? "Assignments unavailable.", response.status);
   return {
     ...value,
     assignments: assignmentSchema.array().parse(value.assignments),
@@ -49,20 +52,29 @@ async function sendAction(value: unknown) {
 function useAssignments(requestId?: string) {
   const [data, setData] = useState<Result | null>(null);
   const [issue, setIssue] = useState("");
+  const sequence = useRef(0);
+  const cancelPending = useCallback(() => { sequence.current++; }, []);
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
+      const current = ++sequence.current;
       try {
         const result = await loadAssignments(requestId, signal);
-        if (!signal?.aborted) {
+        if (!signal?.aborted && current === sequence.current) {
           setData(result);
           setIssue("");
+          return true;
         }
       } catch (error) {
-        if (!signal?.aborted)
+        if (!signal?.aborted && current === sequence.current) {
+          // Keep unsaved work on service failures, but discard another account's
+          // cached record once the server says the session/access is no longer valid.
+          if (error instanceof AssignmentLoadError && [401, 403].includes(error.status)) setData(null);
           setIssue(
             error instanceof Error ? error.message : "Assignments unavailable.",
           );
+        }
       }
+      return false;
     },
     [requestId],
   );
@@ -74,20 +86,38 @@ function useAssignments(requestId?: string) {
     focus();
     window.addEventListener("focus", focus);
     return () => {
+      cancelPending();
       controller.abort();
       window.removeEventListener("focus", focus);
     };
-  }, [refresh]);
+  }, [refresh, cancelPending]);
   return { data, issue, refresh };
+}
+function RefreshIssue({ issue, retry }: { issue: string; retry: () => void }) {
+  return issue ? (
+    <div role="alert">
+      <p>{issue}</p>
+      <p>Your form is retained. Refresh to see the latest status before continuing.</p>
+      <button type="button" className="button secondary" onClick={retry}>Retry refresh</button>
+    </div>
+  ) : null;
+}
+function useNow() {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
 }
 function Gate({ enabled, reason }: { enabled: boolean; reason: Result["blockedReason"] }) {
   return enabled ? null : (
     <p className="workflow-gate" role="status">
       {reason === "signing_configuration"
-        ? "Field work is disabled because server signing configuration is missing or invalid. Contact the administrator."
+        ? "Field work is unavailable because secure signing is not configured. Contact your administrator."
         : reason === "local_gate"
-          ? "Field work is disabled by the local workflow gate. An administrator must review live authorization checks before enabling the pilot."
-          : "Field work is disabled because database workflow readiness has not been confirmed. An administrator must check the database gates and signing readiness."}
+          ? "Field work is not enabled. An administrator must complete access checks before enabling it."
+          : "Field work is unavailable until an administrator confirms the required security checks."}
     </p>
   );
 }
@@ -116,7 +146,7 @@ function History({ assignment }: { assignment: Assignment }) {
     </section>
   );
 }
-function Submissions({ assignment }: { assignment: Assignment }) {
+export function EvidenceSubmissions({ assignment, onPhotoState }: { assignment: Assignment; onPhotoState?: (id: string, loaded: boolean) => void }) {
   const evidence = [...assignment.task_evidence]
     .filter((e) => e.submitted_at)
     .sort((a, b) => b.submission_round - a.submission_round);
@@ -124,29 +154,44 @@ function Submissions({ assignment }: { assignment: Assignment }) {
     <section>
       <h3>Submitted evidence</h3>
       {!evidence.length ? (
-        <p>No finalized submissions.</p>
+        <p>No evidence submitted yet.</p>
       ) : (
-        evidence.map((e) => (
+        evidence.map((e) => {
+          const location = evidenceInputSchema.shape.location.safeParse(e.location);
+          const sharedLocation = location.success ? location.data : undefined;
+          const review = assignment.assignment_events
+            .filter((event) => event.evidence_id === e.id && ["approve", "revise", "complete"].includes(event.action))
+            .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+          return (
           <article className="workflow-evidence" key={e.id}>
             <h4>Submission {e.submission_round}</h4>
+            <p><strong>Original question:</strong> {assignment.verification_requests.question}</p>
+            <p><strong>Requested location:</strong> {assignment.verification_requests.location_description}</p>
             <EvidencePhoto
               id={e.id}
               title={assignment.verification_requests.title}
               round={e.submission_round}
+              onPhotoState={onPhotoState}
             />
+            <p><strong>Verifier observation</strong></p>
             <p className="workflow-observation">{e.observation}</p>
             <p>
+              Submitted{" "}
               <time dateTime={e.submitted_at!}>
                 {new Date(e.submitted_at!).toLocaleString()}
               </time>
             </p>
             <p className="field-hint">
-              {e.location
-                ? "Optional location was shared with consent. It does not prove authenticity."
+              {sharedLocation
+                ? `Verifier-provided coordinates: ${sharedLocation.latitude.toFixed(6)}, ${sharedLocation.longitude.toFixed(6)}. Shared with consent; not independently verified.`
                 : "No optional location shared."}
             </p>
+            <p className="field-hint">Observation and photo capture times are not recorded. Submission time does not establish photograph freshness or location authenticity.</p>
+            <p><strong>Review outcome:</strong> {review?.action === "complete" ? "Completed after approval" : review?.action === "approve" ? "Approved" : review?.action === "revise" ? "Revision requested" : "Awaiting review"}</p>
+            {review && <p>Reviewed <time dateTime={review.created_at}>{new Date(review.created_at).toLocaleString()}</time>{review.note && <> · {review.note}</>}</p>}
           </article>
-        ))
+          );
+        })
       )}
     </section>
   );
@@ -155,17 +200,20 @@ function EvidencePhoto({
   id,
   title,
   round,
+  onPhotoState,
 }: {
   id: string;
   title: string;
   round: number;
+  onPhotoState?: (id: string, loaded: boolean) => void;
 }) {
   const [failed, setFailed] = useState(false);
   return failed ? (
     <div>
       <p role="alert">
         The private photograph could not be displayed. Your observation and
-        submission history are still available.
+        submission history are still available. Refresh your session or retry
+        the photograph before approving this evidence.
       </p>
       <button className="button secondary" onClick={() => setFailed(false)}>
         Retry photograph
@@ -176,7 +224,8 @@ function EvidencePhoto({
       src={`/api/evidence/${id}`}
       alt={`Submitted photograph for ${title}, revision ${round}`}
       loading="lazy"
-      onError={() => setFailed(true)}
+      onLoad={() => onPhotoState?.(id, true)}
+      onError={() => { setFailed(true); onPhotoState?.(id, false); }}
     />
   );
 }
@@ -186,20 +235,23 @@ function EvidenceForm({
   disabled,
 }: {
   assignment: Assignment;
-  onSaved: () => Promise<void>;
+  onSaved: () => Promise<boolean>;
   disabled: boolean;
 }) {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  const [consent, setConsent] = useState(false);
   const submissionId = useRef<string | null>(null);
   // Reuse a pending reservation after a reload rather than creating duplicate objects.
   const pending = assignment.task_evidence.find(
     (e) =>
       e.submission_round === assignment.submission_round && !e.submitted_at,
   );
+  const location = evidenceInputSchema.shape.location.safeParse(pending?.location);
+  const retryLocation = location.success ? location.data : undefined;
+  const [consent, setConsent] = useState(Boolean(retryLocation));
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy || disabled) return;
     setMessage("");
     setBusy(true);
     try {
@@ -239,8 +291,10 @@ function EvidenceForm({
       const response = await fetch("/api/evidence", { method: "POST", body });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Submission failed.");
-      setMessage("Evidence submitted for human review.");
-      await onSaved();
+      if (result.ok !== true || result.id !== submissionId.current)
+        throw new Error("Submission status could not be confirmed. Refresh the task before retrying the same submission.");
+      const refreshed = await onSaved();
+      setMessage(refreshed ? "Evidence submitted for human review." : "The server confirmed submission, but the latest task status could not load. Refresh before taking another action.");
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -268,9 +322,8 @@ function EvidenceForm({
       </p>
       {pending && (
         <p className="workflow-gate">
-          An unfinished upload exists. Retry using the same photo, observation,
-          and consent fields. Contact an administrator if that upload cannot be
-          recovered.
+          This upload is unfinished. Retry with the same photo, observation,
+          and consent fields. Contact your administrator if it still fails.
         </p>
       )}
       <label htmlFor="evidence-photo">Photograph</label>
@@ -313,6 +366,8 @@ function EvidenceForm({
               max={90}
               step="any"
               required
+              defaultValue={retryLocation?.latitude}
+              disabled={busy || disabled}
             />
           </label>
           <label>
@@ -324,6 +379,8 @@ function EvidenceForm({
               max={180}
               step="any"
               required
+              defaultValue={retryLocation?.longitude}
+              disabled={busy || disabled}
             />
           </label>
         </div>
@@ -343,29 +400,25 @@ function EvidenceForm({
   );
 }
 export function VerifierTasks({ id }: { id?: string }) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 30000);
-    return () => clearInterval(timer);
-  }, []);
+  const now = useNow();
   const { data, issue, refresh } = useAssignments();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const assignment = data?.assignments.find((a) => a.id === id);
   async function respond(action: "accept" | "decline") {
-    if (!assignment) return;
+    if (!assignment || busy || issue || !data?.enabled || Date.parse(assignment.verification_requests.expiration) <= now) return;
     setBusy(true);
     setMessage("");
     try {
       await sendAction({ id: assignment.id, action });
-      await refresh();
+      if (!await refresh()) setMessage("The server saved your response, but the latest task status could not load. Refresh before responding again.");
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Action failed.");
     } finally {
       setBusy(false);
     }
   }
-  if (issue)
+  if (issue && !data)
     return (
       <section className="card form-card">
         <h1>Assignments unavailable</h1>
@@ -384,7 +437,7 @@ export function VerifierTasks({ id }: { id?: string }) {
             <span className="eyebrow">VERIFIER WORKSPACE</span>
             <h1>Your assignments</h1>
             <p>
-              Only tasks assigned to your approved verifier account appear here.
+              Tasks assigned to you.
             </p>
           </div>
           <button className="button secondary" onClick={() => void refresh()}>
@@ -392,6 +445,7 @@ export function VerifierTasks({ id }: { id?: string }) {
           </button>
         </div>
         <Gate enabled={data.enabled} reason={data.blockedReason} />
+        <RefreshIssue issue={issue} retry={() => void refresh()} />
         {data.assignments.length ? (
           <div className="workflow-list">
             {data.assignments.map((a) => (
@@ -419,9 +473,8 @@ export function VerifierTasks({ id }: { id?: string }) {
           <section className="card form-card">
             <h2>No assignments yet</h2>
             <p>
-              No tasks have been assigned to your approved verifier account.
-              A dispatcher can assign an eligible task once the workflow is
-              enabled. There is no public task marketplace.
+              Your assigned tasks will appear here. A dispatcher must assign
+              work to your approved account.
             </p>
           </section>
         )}
@@ -453,6 +506,7 @@ export function VerifierTasks({ id }: { id?: string }) {
         <StatusBadge status={assignment.status} />
       </div>
       <Gate enabled={data.enabled} reason={data.blockedReason} />
+      <RefreshIssue issue={issue} retry={() => void refresh()} />
       {expired && (
         <p className="workflow-gate">
           This task has expired. New responses and submissions are closed.
@@ -493,9 +547,8 @@ export function VerifierTasks({ id }: { id?: string }) {
               ))}
             </ul>
             <p className="field-hint">
-              Planning instructions are not evidence or a certification of road
-              safety. Contact the dispatcher through your existing approved
-              channel if clarification is needed.
+              Instructions are not evidence or a road-safety certification.
+              Contact your dispatcher if you need clarification.
             </p>
           </section>
           <section className="card form-card">
@@ -504,14 +557,14 @@ export function VerifierTasks({ id }: { id?: string }) {
               <div className="workflow-actions">
                 <button
                   className="button primary"
-                  disabled={busy || !data.enabled || expired}
+                  disabled={busy || !data.enabled || expired || Boolean(issue)}
                   onClick={() => void respond("accept")}
                 >
                   Accept assignment
                 </button>
                 <button
                   className="button secondary"
-                  disabled={busy || !data.enabled || expired}
+                  disabled={busy || !data.enabled || expired || Boolean(issue)}
                   onClick={() => void respond("decline")}
                 >
                   Decline assignment
@@ -526,12 +579,12 @@ export function VerifierTasks({ id }: { id?: string }) {
                 key={`${assignment.id}-${assignment.submission_round}`}
                 assignment={assignment}
                 onSaved={() => refresh()}
-                disabled={!data.enabled || expired}
+                disabled={!data.enabled || expired || Boolean(issue)}
               />
             )}
           </section>
           <section className="card form-card">
-            <Submissions assignment={assignment} />
+            <EvidenceSubmissions assignment={assignment} />
             <History assignment={assignment} />
           </section>
         </div>
@@ -554,14 +607,21 @@ export function DispatcherAssignment({ requestId }: { requestId: string }) {
   const { data, issue, refresh } = useAssignments(requestId);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [loadedPhoto, setLoadedPhoto] = useState<string | null>(null);
+  const now = useNow();
   const assignment = data?.assignments[0];
+  const expired = Boolean(assignment && Date.parse(assignment.verification_requests.expiration) <= now);
+  const currentEvidence = assignment?.task_evidence.find((item) => item.submission_round === assignment.submission_round && item.submitted_at);
+  const photoReady = Boolean(currentEvidence && loadedPhoto === currentEvidence.id);
+  const blocked = busy || !data?.enabled || Boolean(issue) || expired;
   async function action(value: unknown) {
+    if (blocked) return;
     setBusy(true);
     setMessage("");
     try {
       await sendAction(value);
-      await refresh();
-      setMessage("Saved.");
+      const refreshed = await refresh();
+      setMessage(refreshed ? "Saved." : "The server saved the action, but the latest assignment status could not load. Refresh before taking another action.");
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Action failed.");
     } finally {
@@ -578,7 +638,7 @@ export function DispatcherAssignment({ requestId }: { requestId: string }) {
       >
         Refresh assignment
       </button>
-      {issue ? (
+      {issue && !data ? (
         <>
           <p role="alert">{issue}</p>
           <button className="button secondary" onClick={() => void refresh()}>
@@ -590,6 +650,8 @@ export function DispatcherAssignment({ requestId }: { requestId: string }) {
       ) : (
         <>
           <Gate enabled={data.enabled} reason={data.blockedReason} />
+          <RefreshIssue issue={issue} retry={() => void refresh()} />
+          {expired && <p className="workflow-gate">This task has expired. New reviews and completion are closed.</p>}
           {!assignment ? (
             <form
               className="workflow-form"
@@ -606,16 +668,15 @@ export function DispatcherAssignment({ requestId }: { requestId: string }) {
               }}
             >
               <p>
-                Assign a trusted accepted plan to an administrator-approved
-                verifier in this workspace. Requests requiring video remain
-                unavailable in this phase.
+                Choose an accepted plan and an approved verifier.
+                Video evidence is not supported.
               </p>
               <label htmlFor="assignment-plan">Accepted SERV plan</label>
               <select
                 id="assignment-plan"
                 name="planId"
                 required
-                disabled={busy || !data.enabled}
+                disabled={blocked}
               >
                 <option value="">Select accepted plan</option>
                 {data.plans.map((p) => (
@@ -629,7 +690,7 @@ export function DispatcherAssignment({ requestId }: { requestId: string }) {
                 id="assignment-verifier"
                 name="verifierId"
                 required
-                disabled={busy || !data.enabled}
+                disabled={blocked}
               >
                 <option value="">Select approved verifier</option>
                 {data.verifiers.map((v) => (
@@ -639,14 +700,12 @@ export function DispatcherAssignment({ requestId }: { requestId: string }) {
                 ))}
               </select>
               <p className="field-hint">
-                Account IDs are shown because this phase has no public verifier
-                profiles. Membership is administrator managed.
+                Verifiers are listed by account ID. Your administrator manages access.
               </p>
               <button
                 className="button primary"
                 disabled={
-                  busy ||
-                  !data.enabled ||
+                  blocked ||
                   !data.plans.length ||
                   !data.verifiers.length
                 }
@@ -660,7 +719,9 @@ export function DispatcherAssignment({ requestId }: { requestId: string }) {
                 <span>Assigned verifier: {assignment.verifier_id}</span>
                 <StatusBadge status={assignment.status} />
               </div>
-              <Submissions assignment={assignment} />
+              <EvidenceSubmissions assignment={assignment} onPhotoState={(id, loaded) => {
+                if (id === currentEvidence?.id) setLoadedPhoto(loaded ? id : null);
+              }} />
               {["submitted", "approved"].includes(assignment.status) && (
                 <form
                   className="workflow-form"
@@ -673,6 +734,11 @@ export function DispatcherAssignment({ requestId }: { requestId: string }) {
                       submitter instanceof HTMLButtonElement
                         ? submitter.value
                         : "";
+                    if (blocked) return;
+                    if (["approve", "complete"].includes(selectedAction) && !photoReady) {
+                      setMessage("Load and review the current photograph before approving or completing this task.");
+                      return;
+                    }
                     const evidence = assignment.task_evidence.find(
                       (item) =>
                         item.submission_round === assignment.submission_round &&
@@ -703,7 +769,9 @@ export function DispatcherAssignment({ requestId }: { requestId: string }) {
                     aria-describedby="assignment-result"
                     maxLength={2000}
                     rows={3}
+                    disabled={blocked}
                   />
+                  {!photoReady && <p role="status">Load and review the current photograph and observation before approving or completing this task.</p>}
                   <div className="workflow-actions">
                     {assignment.status === "submitted" ? (
                       <>
@@ -711,7 +779,7 @@ export function DispatcherAssignment({ requestId }: { requestId: string }) {
                           name="action"
                           value="approve"
                           className="button primary"
-                          disabled={busy || !data.enabled}
+                          disabled={blocked || !photoReady}
                         >
                           Approve evidence
                         </button>
@@ -719,7 +787,7 @@ export function DispatcherAssignment({ requestId }: { requestId: string }) {
                           name="action"
                           value="revise"
                           className="button secondary"
-                          disabled={busy || !data.enabled}
+                          disabled={blocked}
                         >
                           Request revision
                         </button>
@@ -729,7 +797,7 @@ export function DispatcherAssignment({ requestId }: { requestId: string }) {
                         className="button primary"
                         name="action"
                         value="complete"
-                        disabled={busy || !data.enabled}
+                        disabled={blocked || !photoReady}
                       >
                         Mark reviewed task complete
                       </button>
@@ -741,9 +809,8 @@ export function DispatcherAssignment({ requestId }: { requestId: string }) {
             </>
           )}
           <p className="field-hint">
-            Review records a human assessment of the submission. A reviewed
-            photograph does not prove that a road is safe. No payment is
-            executed.
+            Approval records your review, not a guarantee of road safety.
+            Payments are unavailable.
           </p>
         </>
       )}
